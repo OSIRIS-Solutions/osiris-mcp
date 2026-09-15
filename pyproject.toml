@@ -1,0 +1,35 @@
+[project]
+name = "osiris-mcp"
+version = "0.1.0"
+description = "A secure, read-only MCP interface for OSIRIS research information systems."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+authors = [
+    { name = "OSIRIS Solutions GmbH" },
+]
+dependencies = [
+    "httpx>=0.28,<1",
+    "mcp[cli]>=2,<3",
+    "pydantic-settings>=2.10,<3",
+]
+
+[project.scripts]
+osiris-mcp = "osiris_mcp.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<10",
+    "pytest-asyncio>=1.2,<2",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/osiris_mcp"]
