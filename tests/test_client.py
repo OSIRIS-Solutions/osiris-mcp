@@ -294,7 +294,20 @@ async def test_activity_search_returns_only_compact_evidence() -> None:
                     "persons": [{"id": "julia", "name": "Julia Koblitz"}],
                     "units": [{"id": "PSL", "name": "Predictive Systems Lab"}],
                     "citation": "Quadros E. et al. (2026) ...",
-                    "identifiers": {"doi": "10.1515/jib-2025-0058"},
+                    "identifiers": {
+                        "doi": "10.1515/jib-2025-0058",
+                        "pubmed": 42520009,
+                    },
+                    "affiliated": True,
+                    "online_ahead_of_print": False,
+                    "metrics": {
+                        "impact_factor": 2,
+                        "citation_count": 0,
+                        "sjr": 0.445,
+                        "quartile": "Q2",
+                        "metrics_year": 2025,
+                        "citation_count_updated_at": "2026-08-30",
+                    },
                     "history": [{"private": "must not leave the adapter"}],
                     "openalex": {"verbose": "must not leave the adapter"},
                 }],
@@ -315,18 +328,34 @@ async def test_activity_search_returns_only_compact_evidence() -> None:
             person="julia",
             unit="PSL",
             topic="ai-prediction",
+            include_unaffiliated=True,
+            include_online_ahead_of_print=True,
             limit=5,
         )
 
     assert captured_request is not None
     assert captured_request.url.path == "/api/mcp/activities"
+    assert captured_request.url.params["from_date"] == "2026-01-01"
+    assert captured_request.url.params["to_date"] == "2026-12-31"
     assert captured_request.url.params["type"] == "publication"
     assert captured_request.url.params["subtype"] == "article"
     assert captured_request.url.params["person"] == "julia"
     assert captured_request.url.params["unit"] == "PSL"
     assert captured_request.url.params["topic"] == "ai-prediction"
+    assert captured_request.url.params["include_unaffiliated"] == "true"
+    assert captured_request.url.params["include_online_ahead_of_print"] == "true"
     activity = result.activities[0]
     assert activity.identifiers["doi"] == "10.1515/jib-2025-0058"
+    assert activity.identifiers["pubmed"] == "42520009"
+    assert activity.affiliated is True
+    assert activity.online_ahead_of_print is False
+    assert activity.metrics is not None
+    assert activity.metrics.impact_factor == 2.0
+    assert activity.metrics.citation_count == 0
+    assert activity.metrics.sjr == 0.445
+    assert activity.metrics.quartile == "Q2"
+    assert activity.metrics.metrics_year == 2025
+    assert activity.metrics.citation_count_updated_at == "2026-08-30"
     assert activity.source_url.endswith("/activities/view/6a94001d84a9e02d3f003b97")
     assert "history" not in activity.model_dump()
     assert "openalex" not in activity.model_dump()
@@ -347,6 +376,64 @@ async def test_activity_search_rejects_reversed_date_range() -> None:
             assert str(exc) == "from_date must not be after to_date"
         else:
             raise AssertionError("expected a reversed date range to be rejected")
+
+
+async def test_activity_search_exposes_complete_pagination_metadata() -> None:
+    captured_request: httpx.Request | None = None
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_request
+        captured_request = request
+        return httpx.Response(
+            200,
+            json={
+                "status": 200,
+                "count": 1,
+                "total": 3,
+                "offset": 1,
+                "limit": 1,
+                "has_more": True,
+                "next_offset": 2,
+                "data": [{
+                    "id": "6a94001d84a9e02d3f003b97",
+                    "type": {"id": "publication", "label": "Publications"},
+                    "subtype": {"id": "article", "label": "Journal Article"},
+                    "title": "Second result",
+                    "persons": [],
+                    "units": [],
+                    "citation": "A compact citation.",
+                    "identifiers": {},
+                }],
+            },
+        )
+
+    settings = Settings(base_url="https://osiris.example.org")
+    async with OsirisClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        result = await client.search_activities(limit=1, offset=1)
+
+    assert captured_request is not None
+    assert captured_request.url.params["offset"] == "1"
+    assert result.count == 1
+    assert result.total == 3
+    assert result.has_more is True
+    assert result.next_offset == 2
+
+
+async def test_activity_search_rejects_invalid_offset() -> None:
+    settings = Settings(base_url="https://osiris.example.org")
+    async with OsirisClient(
+        settings,
+        transport=httpx.MockTransport(lambda _: httpx.Response(200)),
+    ) as client:
+        try:
+            await client.search_activities(offset=-1)
+        except ValueError as exc:
+            assert str(exc) == "offset must be between 0 and 1000000"
+        else:
+            raise AssertionError("expected a negative offset to be rejected")
 
 
 async def test_get_activity_uses_dedicated_endpoint() -> None:
@@ -378,6 +465,9 @@ async def test_get_activity_uses_dedicated_endpoint() -> None:
         result = await client.get_activity("6a94001d84a9e02d3f003b97")
 
     assert result.citation == "A compact citation."
+    assert result.affiliated is None
+    assert result.online_ahead_of_print is False
+    assert result.metrics is None
 
 
 async def test_search_people_resolves_identity_without_private_fields() -> None:

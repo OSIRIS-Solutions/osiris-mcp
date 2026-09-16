@@ -67,10 +67,24 @@ The available read-only tools are:
   allowlist.
 - `get_project`: retrieves the allowlisted details of one project by ID.
 
-Project searches can be narrowed by a free-text query, an `active_on` date in
+Activity date filters inclusively constrain `start_date`; for example,
+`from_date=2026-09-01` and `to_date=2026-09-30` select activities starting in
+September 2026. Activity searches include only affiliated records and exclude
+Online-ahead-of-print records by default. Exceptional searches can opt in with
+`include_unaffiliated=true` or `include_online_ahead_of_print=true`. Project
+searches can be narrowed by a free-text query, an `active_on` date in
 `YYYY-MM-DD` format, exact status, topic, organizational unit, and result limit.
 Topic and unit filters always require exact instance-specific IDs. Clients
 should obtain them with `list_topics` and `list_units` rather than guessing.
+
+## Complete result lists
+
+List and search tools return bounded pages so a large OSIRIS installation cannot
+overflow a single MCP response. Every page contains `count`, `total`, `offset`,
+`limit`, `has_more`, and `next_offset`. To obtain a complete result list, keep
+the original filters unchanged and pass the returned `next_offset` into the next
+call until `has_more` is `false`. Organizational-unit and topic resources follow
+the same pagination internally and therefore return their complete catalogs.
 
 The same discovery information is available as MCP resources for clients that
 use resource discovery:
@@ -115,10 +129,15 @@ Search and detail results share one small contract containing only:
 - linked OSIRIS persons and organizational units
 - the plain-text `citation` rendered by OSIRIS
 - stable identifiers such as DOI or PubMed ID, when present
+- affiliation and Online-ahead-of-print status
+- optional bibliometric values, including their available reference or
+  retrieval dates
 - a source URL added by the MCP adapter
 
 Free-text search may inspect the title, abstract, and rendered citation on the
 OSIRIS side, but the verbose source fields are not returned to the model.
+Bibliometric values are contextual evidence and must not be treated as a
+standalone measure of the quality of a publication or researcher.
 
 ## Person and expertise search
 

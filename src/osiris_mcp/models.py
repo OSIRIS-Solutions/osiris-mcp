@@ -2,7 +2,18 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class PaginatedResult(BaseModel):
+    """Metadata that lets an MCP client retrieve every matching record."""
+
+    count: int = 0
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
+    has_more: bool = False
+    next_offset: int | None = None
 
 
 class ProjectSummary(BaseModel):
@@ -24,7 +35,7 @@ class ProjectSummary(BaseModel):
     source_url: str | None = None
 
 
-class ProjectSearchResult(BaseModel):
+class ProjectSearchResult(PaginatedResult):
     """Paginated project search result."""
 
     count: int
@@ -66,6 +77,7 @@ class InstanceInfo(BaseModel):
     catalogs: dict[str, CatalogInfo] = Field(default_factory=dict)
     supported_project_filters: list[str] = Field(default_factory=list)
     supported_activity_filters: list[str] = Field(default_factory=list)
+    pagination: dict[str, Any] = Field(default_factory=dict)
 
 
 class UnitPathItem(BaseModel):
@@ -93,7 +105,7 @@ class UnitInfo(BaseModel):
     active: bool = True
 
 
-class UnitListResult(BaseModel):
+class UnitListResult(PaginatedResult):
     """Search result for instance-specific organizational units."""
 
     count: int
@@ -114,7 +126,7 @@ class TopicInfo(BaseModel):
     description_de: str | None = None
 
 
-class TopicListResult(BaseModel):
+class TopicListResult(PaginatedResult):
     """Topic catalog, including explicit feature unavailability."""
 
     available: bool
@@ -173,6 +185,19 @@ class ActivityUnitReference(BaseModel):
     name_de: str | None = None
 
 
+class ActivityMetrics(BaseModel):
+    """Optional bibliometric values with their available provenance dates."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    impact_factor: float | None = None
+    citation_count: int | None = None
+    sjr: float | None = None
+    quartile: str | None = None
+    metrics_year: int | None = None
+    citation_count_updated_at: str | None = None
+
+
 class ActivitySummary(BaseModel):
     """Compact evidence bundle for one heterogeneous OSIRIS activity."""
 
@@ -188,11 +213,27 @@ class ActivitySummary(BaseModel):
     units: list[ActivityUnitReference] = Field(default_factory=list)
     citation: str
     identifiers: dict[str, str] = Field(default_factory=dict)
+    affiliated: bool | None = None
+    online_ahead_of_print: bool = False
+    metrics: ActivityMetrics | None = None
     source_url: str | None = None
 
+    @field_validator("identifiers", mode="before")
+    @classmethod
+    def normalize_identifiers(cls, value: Any) -> Any:
+        """Keep identifiers textual even when an older API encodes digits as JSON numbers."""
 
-class ActivitySearchResult(BaseModel):
-    """Bounded activity search result."""
+        if not isinstance(value, dict):
+            return value
+        return {
+            str(key): str(identifier)
+            for key, identifier in value.items()
+            if identifier is not None
+        }
+
+
+class ActivitySearchResult(PaginatedResult):
+    """One page of a complete activity search result."""
 
     count: int
     activities: list[ActivitySummary]
@@ -290,15 +331,15 @@ class ExpertSummary(PersonSummary):
     evidence: ExpertEvidence
 
 
-class PersonSearchResult(BaseModel):
-    """Bounded identity search result."""
+class PersonSearchResult(PaginatedResult):
+    """One page of a complete identity search result."""
 
     count: int
     persons: list[PersonSummary]
 
 
-class ExpertSearchResult(BaseModel):
-    """Bounded, evidence-backed expertise search result."""
+class ExpertSearchResult(PaginatedResult):
+    """One page of a complete, evidence-backed expertise search result."""
 
     count: int
     openalex_enabled: bool

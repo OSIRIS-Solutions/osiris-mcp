@@ -23,6 +23,22 @@ async def test_server_exposes_initial_read_only_tools() -> None:
     }
     assert all(tool.annotations.read_only_hint for tool in result.tools)
     assert all(not tool.annotations.destructive_hint for tool in result.tools)
+    paginated = {
+        "list_units",
+        "list_topics",
+        "search_activities",
+        "search_people",
+        "search_experts",
+        "search_projects",
+    }
+    for tool in result.tools:
+        if tool.name in paginated:
+            assert "offset" in tool.input_schema["properties"]
+
+    activity_tool = next(tool for tool in result.tools if tool.name == "search_activities")
+    properties = activity_tool.input_schema["properties"]
+    assert properties["include_unaffiliated"]["default"] is False
+    assert properties["include_online_ahead_of_print"]["default"] is False
 
 
 async def test_server_info_reports_configuration_without_exposing_secrets() -> None:

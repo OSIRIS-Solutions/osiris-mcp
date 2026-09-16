@@ -79,33 +79,46 @@ class OsirisClient:
         *,
         query: str | None = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> UnitListResult:
         """Resolve human-readable unit names to exact instance-specific IDs."""
 
-        params = self._catalog_params(query=query, limit=limit)
+        params = self._catalog_params(query=query, limit=limit, offset=offset)
         response = await self._http.get(
             f"{self._base_url}/api/mcp/units",
             params=params,
         )
-        data = self._response_data(response, "unit catalog", list)
+        data, payload = self._response_envelope(response, "unit catalog", list)
         units = [UnitInfo.model_validate(item) for item in data if isinstance(item, dict)]
-        return UnitListResult(count=len(units), units=units)
+        return UnitListResult(
+            **self._page_metadata(payload, len(units), limit, offset),
+            units=units,
+        )
 
     async def list_topics(
         self,
         *,
         query: str | None = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> TopicListResult:
         """Resolve topic names to exact IDs, or report that topics are disabled."""
 
-        params = self._catalog_params(query=query, limit=limit)
+        params = self._catalog_params(query=query, limit=limit, offset=offset)
         response = await self._http.get(
             f"{self._base_url}/api/mcp/topics",
             params=params,
         )
-        data = self._response_data(response, "topic catalog", dict)
-        return TopicListResult.model_validate(data)
+        data, payload = self._response_envelope(response, "topic catalog", dict)
+        return TopicListResult.model_validate({
+            **data,
+            **self._page_metadata(
+                payload,
+                len(data.get("topics", [])),
+                limit,
+                offset,
+            ),
+        })
 
     async def list_activity_types(self) -> ActivityTypeListResult:
         """Return the exact activity category and subtype IDs for this instance."""
@@ -125,13 +138,20 @@ class OsirisClient:
         person: str | None = None,
         unit: str | None = None,
         topic: str | None = None,
+        include_unaffiliated: bool = False,
+        include_online_ahead_of_print: bool = False,
         limit: int = 10,
+        offset: int = 0,
     ) -> ActivitySearchResult:
         """Search activities while returning only compact evidence bundles."""
 
         if not 1 <= limit <= 50:
             raise ValueError("limit must be between 1 and 50")
-        params: list[tuple[str, str]] = [("limit", str(limit))]
+        self._validate_offset(offset)
+        params: list[tuple[str, str]] = [
+            ("limit", str(limit)),
+            ("offset", str(offset)),
+        ]
         if query:
             params.append(("q", query.strip()))
 
@@ -161,15 +181,23 @@ class OsirisClient:
             if value:
                 params.append((name, value.strip()))
 
+        if include_unaffiliated:
+            params.append(("include_unaffiliated", "true"))
+        if include_online_ahead_of_print:
+            params.append(("include_online_ahead_of_print", "true"))
+
         response = await self._http.get(
             f"{self._base_url}/api/mcp/activities",
             params=params,
         )
-        data = self._response_data(response, "activity search", list)
+        data, payload = self._response_envelope(response, "activity search", list)
         activities = [
             self._activity(item) for item in data[:limit] if isinstance(item, dict)
         ]
-        return ActivitySearchResult(count=len(activities), activities=activities)
+        return ActivitySearchResult(
+            **self._page_metadata(payload, len(activities), limit, offset),
+            activities=activities,
+        )
 
     async def get_activity(self, activity_id: str) -> ActivitySummary:
         """Return one compact activity evidence bundle by MongoDB object ID."""
@@ -193,6 +221,7 @@ class OsirisClient:
         unit: str | None = None,
         active_only: bool = True,
         limit: int = 10,
+        offset: int = 0,
     ) -> PersonSearchResult:
         """Resolve a name, username, alias, or ORCID to OSIRIS person IDs."""
 
@@ -201,10 +230,12 @@ class OsirisClient:
             raise ValueError("query must contain between 2 and 200 characters")
         if not 1 <= limit <= 50:
             raise ValueError("limit must be between 1 and 50")
+        self._validate_offset(offset)
         params = [
             ("q", query),
             ("active_only", str(active_only).lower()),
             ("limit", str(limit)),
+            ("offset", str(offset)),
         ]
         if unit:
             params.append(("unit", unit.strip()))
@@ -212,11 +243,14 @@ class OsirisClient:
             f"{self._base_url}/api/mcp/persons",
             params=params,
         )
-        data = self._response_data(response, "person search", list)
+        data, payload = self._response_envelope(response, "person search", list)
         persons = [
             self._person(item) for item in data[:limit] if isinstance(item, dict)
         ]
-        return PersonSearchResult(count=len(persons), persons=persons)
+        return PersonSearchResult(
+            **self._page_metadata(payload, len(persons), limit, offset),
+            persons=persons,
+        )
 
     async def get_person(self, person_id: str) -> PersonDetail:
         """Return one compact public research profile by username."""
@@ -240,6 +274,7 @@ class OsirisClient:
         *,
         unit: str | None = None,
         limit: int = 10,
+        offset: int = 0,
     ) -> ExpertSearchResult:
         """Find active researchers using explicit, traceable expertise evidence."""
 
@@ -248,18 +283,24 @@ class OsirisClient:
             raise ValueError("query must contain between 2 and 200 characters")
         if not 1 <= limit <= 25:
             raise ValueError("limit must be between 1 and 25")
-        params = [("q", query), ("limit", str(limit))]
+        self._validate_offset(offset)
+        params = [("q", query), ("limit", str(limit)), ("offset", str(offset))]
         if unit:
             params.append(("unit", unit.strip()))
         response = await self._http.get(
             f"{self._base_url}/api/mcp/experts",
             params=params,
         )
-        data = self._response_data(response, "expert search", dict)
+        data, payload = self._response_envelope(response, "expert search", dict)
         result = ExpertSearchResult.model_validate(
             {
-                "count": len(data.get("experts", [])),
                 **data,
+                **self._page_metadata(
+                    payload,
+                    len(data.get("experts", [])),
+                    limit,
+                    offset,
+                ),
             }
         )
         for person in result.experts:
@@ -277,14 +318,17 @@ class OsirisClient:
         topic: str | None = None,
         unit: str | None = None,
         limit: int = 10,
+        offset: int = 0,
     ) -> ProjectSearchResult:
         """Search projects using a fixed input and output allowlist."""
 
         if not 1 <= limit <= 50:
             raise ValueError("limit must be between 1 and 50")
+        self._validate_offset(offset)
 
         params: list[tuple[str, str]] = [
             ("limit", str(limit)),
+            ("offset", str(offset)),
         ]
         if query:
             params.append(("q", query.strip()))
@@ -322,7 +366,10 @@ class OsirisClient:
             project.source_url = f"{self._base_url}/projects/view/{project.id}"
             projects.append(project)
 
-        return ProjectSearchResult(count=len(projects), projects=projects)
+        return ProjectSearchResult(
+            **self._page_metadata(payload, len(projects), limit, offset),
+            projects=projects,
+        )
 
     async def get_project(self, project_id: str) -> ProjectSummary:
         """Return one allowlisted project by its MongoDB object ID."""
@@ -353,10 +400,16 @@ class OsirisClient:
         return project
 
     @staticmethod
-    def _catalog_params(*, query: str | None, limit: int) -> list[tuple[str, str]]:
+    def _catalog_params(
+        *,
+        query: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[tuple[str, str]]:
         if not 1 <= limit <= 200:
             raise ValueError("limit must be between 1 and 200")
-        params = [("limit", str(limit))]
+        OsirisClient._validate_offset(offset)
+        params = [("limit", str(limit)), ("offset", str(offset))]
         if query:
             params.append(("q", query.strip()))
         return params
@@ -367,6 +420,19 @@ class OsirisClient:
         description: str,
         expected_type: type[dict] | type[list],
     ) -> Any:
+        data, _ = OsirisClient._response_envelope(
+            response,
+            description,
+            expected_type,
+        )
+        return data
+
+    @staticmethod
+    def _response_envelope(
+        response: httpx.Response,
+        description: str,
+        expected_type: type[dict] | type[list],
+    ) -> tuple[Any, dict[str, Any]]:
         if response.status_code != 200:
             raise OsirisApiError(
                 f"OSIRIS {description} request failed with HTTP {response.status_code}"
@@ -376,11 +442,40 @@ class OsirisClient:
             data = payload.get("data")
             if payload.get("status") != 200 or not isinstance(data, expected_type):
                 raise ValueError("unexpected response envelope")
-            return data
+            return data, payload
         except (AttributeError, TypeError, ValueError) as exc:
             raise OsirisApiError(
                 f"OSIRIS returned invalid {description} data"
             ) from exc
+
+    @staticmethod
+    def _validate_offset(offset: int) -> None:
+        if not 0 <= offset <= 1_000_000:
+            raise ValueError("offset must be between 0 and 1000000")
+
+    @staticmethod
+    def _page_metadata(
+        payload: dict[str, Any],
+        item_count: int,
+        requested_limit: int,
+        requested_offset: int,
+    ) -> dict[str, Any]:
+        count = payload.get("count", item_count)
+        total = payload.get("total", count)
+        offset = payload.get("offset", requested_offset)
+        limit = payload.get("limit", requested_limit)
+        has_more = payload.get("has_more", item_count > 0 and offset + count < total)
+        next_offset = payload.get("next_offset")
+        if has_more and next_offset is None:
+            next_offset = offset + count
+        return {
+            "count": count,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+            "next_offset": next_offset,
+        }
 
     def _activity(self, item: dict[str, Any]) -> ActivitySummary:
         activity = ActivitySummary.model_validate(item)
