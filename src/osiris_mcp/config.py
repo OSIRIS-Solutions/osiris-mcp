@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Julia Koblitz, OSIRIS Solutions GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Application configuration loaded from environment variables."""
 
 from functools import lru_cache
@@ -24,6 +27,7 @@ class Settings(BaseSettings):
     client_id: str | None = None
     api_key: SecretStr | None = None
     timeout_seconds: float = Field(default=15.0, gt=0, le=60)
+    mcp_source_url: HttpUrl | None = None
 
 
 @lru_cache

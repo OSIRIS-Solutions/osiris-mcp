@@ -36,6 +36,11 @@ uv run mcp dev src/osiris_mcp/server.py:mcp
 Copy `.env.example` to `.env` and adjust it for a development OSIRIS instance.
 Never commit `.env` or real API keys.
 
+Set `OSIRIS_MCP_SOURCE_URL` to the public repository containing the exact source
+code of the deployed version. This value is exposed by `server_info`. Operators
+who make a modified version available over a network must point it to the
+Corresponding Source of that modified version as required by AGPL section 13.
+
 For a dedicated MCP client, configure both `OSIRIS_CLIENT_ID` and
 `OSIRIS_API_KEY`. In OSIRIS, allow the client to use the MCP API area and grant
 only the read permissions required by the enabled tools. The legacy global API
@@ -44,7 +49,8 @@ avoided for new installations.
 
 The available read-only tools are:
 
-- `server_info`: shows non-sensitive server and connection information.
+- `server_info`: shows non-sensitive server, connection, license, and source-code
+  information.
 - `get_instance_info`: describes the connected OSIRIS installation, enabled
   features, catalog sizes, and supported project filters.
 - `list_units`: resolves human-readable organizational unit names to the exact
@@ -118,6 +124,31 @@ OSIRIS authenticates this adapter as a dedicated API client. Client secrets are
 stored as hashes, can be rotated or disabled independently, and are restricted
 to the MCP API area and explicitly granted read permissions.
 
+## Safe errors and request IDs
+
+Every OSIRIS MCP API request receives a server-generated identifier in the form
+`req_<32 hexadecimal characters>`. It is returned in the `X-Request-ID` header
+for successful and unsuccessful responses. Error responses also contain the
+same value as `request_id` in their JSON body.
+
+Expected validation and not-found responses remain machine-readable.
+Unexpected PHP errors are logged inside OSIRIS with their request ID and MCP
+endpoint, while the caller receives only a generic HTTP 500 response—never a
+stack trace, source path, database error, or raw exception message. Buffered
+warnings and stray output are discarded before the JSON response is sent.
+
+The Python adapter does not forward OSIRIS error messages or rejected response
+values to the MCP client. It emits a stable description and the validated
+request ID, when one was received. This gives administrators a useful support
+reference without exposing server details to the language model. Transport
+failures are reported generically because no server-side request ID exists.
+Expected errors are explicitly marked as safe MCP tool errors so the model can
+read this description. Unexpected exceptions remain masked by the MCP runtime.
+If local input validation fails before an HTTP request is made, the error states
+that OSIRIS was not called and therefore no request ID exists. HTTPX request
+logging is restricted to warnings and errors because complete request URLs can
+contain names, search terms, or other sensitive query parameters.
+
 ## Compact activity representation
 
 Activity documents can contain extensive editing history, metrics, external
@@ -158,3 +189,19 @@ with a lower relevance weight than curated profile data.
 Email addresses, phone numbers, gender, login history, account roles, internal
 IDs, biographies, social profiles, and user-interface settings are never part of
 these MCP responses.
+
+## License
+
+OSIRIS MCP is free software licensed under the GNU Affero General Public License,
+version 3 or any later version (`AGPL-3.0-or-later`). You may use, modify,
+distribute, and commercially operate the software under the conditions of that
+license. In particular, operators of a modified version that users interact with
+remotely over a network must offer those users access to the Corresponding Source
+of the deployed version.
+
+Copyright © 2026 Julia Koblitz, OSIRIS Solutions GmbH.
+
+See [LICENSE](LICENSE) for the complete license text and
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution requirements. This license
+applies to the standalone Python connector in this repository; it does not by
+itself change the license of the separate OSIRIS Core repository.

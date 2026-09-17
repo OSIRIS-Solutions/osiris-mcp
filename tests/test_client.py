@@ -1,7 +1,119 @@
+# SPDX-FileCopyrightText: 2026 Julia Koblitz, OSIRIS Solutions GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import httpx
 
-from osiris_mcp.client import OsirisClient
+from osiris_mcp.client import OsirisApiError, OsirisClient
 from osiris_mcp.config import Settings
+
+
+async def test_api_error_includes_request_id_but_not_server_message() -> None:
+    request_id = "req_0123456789abcdef0123456789abcdef"
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            500,
+            headers={"X-Request-ID": request_id},
+            json={
+                "status": 500,
+                "error": "InternalServerError",
+                "msg": "sensitive database details",
+                "request_id": request_id,
+            },
+        )
+
+    settings = Settings(base_url="https://osiris.example.org")
+    async with OsirisClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        try:
+            await client.get_instance_info()
+        except OsirisApiError as exc:
+            message = str(exc)
+            assert request_id in message
+            assert "sensitive database details" not in message
+        else:
+            raise AssertionError("expected an unsuccessful response to be rejected")
+
+
+async def test_api_error_can_read_request_id_from_safe_error_envelope() -> None:
+    request_id = "req_fedcba9876543210fedcba9876543210"
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "status": 400,
+                "error": "ValidationError",
+                "msg": "invalid input",
+                "request_id": request_id,
+            },
+        )
+
+    settings = Settings(base_url="https://osiris.example.org")
+    async with OsirisClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        try:
+            await client.list_activity_types()
+        except OsirisApiError as exc:
+            assert request_id in str(exc)
+            assert "invalid input" not in str(exc)
+        else:
+            raise AssertionError("expected an unsuccessful response to be rejected")
+
+
+async def test_invalid_response_data_does_not_leak_rejected_values() -> None:
+    request_id = "req_11111111111111111111111111111111"
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"X-Request-ID": request_id},
+            json={
+                "status": 200,
+                "data": {"unexpected": "sensitive rejected value"},
+            },
+        )
+
+    settings = Settings(base_url="https://osiris.example.org")
+    async with OsirisClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        try:
+            await client.get_instance_info()
+        except OsirisApiError as exc:
+            message = str(exc)
+            assert request_id in message
+            assert "sensitive rejected value" not in message
+        else:
+            raise AssertionError("expected invalid response data to be rejected")
+
+
+async def test_transport_error_does_not_expose_request_details() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(
+            "connection failed with sensitive transport details",
+            request=request,
+        )
+
+    settings = Settings(base_url="https://osiris.example.org")
+    async with OsirisClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        try:
+            await client.search_people("classified-query")
+        except OsirisApiError as exc:
+            message = str(exc)
+            assert "classified-query" not in message
+            assert "sensitive transport details" not in message
+            assert "no request ID is available" in message
+        else:
+            raise AssertionError("expected the transport error to be sanitized")
 
 
 async def test_project_search_uses_header_and_allowlisted_fields() -> None:

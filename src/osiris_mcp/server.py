@@ -1,14 +1,49 @@
+# SPDX-FileCopyrightText: 2026 Julia Koblitz, OSIRIS Solutions GmbH
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """MCP tool definitions and local server entry point."""
 
+from collections.abc import Awaitable, Callable
+from functools import wraps
 import json
-from typing import Any
+import logging
+from typing import Any, ParamSpec, TypeVar
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from osiris_mcp import __version__
-from osiris_mcp.client import OsirisClient
+from osiris_mcp import __license__, __version__
+from osiris_mcp.client import OsirisApiError, OsirisClient
 from osiris_mcp.config import get_settings
+
+
+# HTTPX logs complete request URLs at INFO level. MCP query parameters can
+# contain names or research questions, so only warnings and errors are retained.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def _expose_expected_tool_errors(
+    function: Callable[P, Awaitable[R]],
+) -> Callable[P, Awaitable[R]]:
+    """Expose only errors whose messages are deliberately safe for the model."""
+
+    @wraps(function)
+    async def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return await function(*args, **kwargs)
+        except OsirisApiError as exc:
+            raise ToolError(str(exc)) from exc
+        except ValueError as exc:
+            raise ToolError(
+                f"{exc} (OSIRIS was not called; no request ID is available)"
+            ) from exc
+
+    return wrapped
 
 
 mcp = MCPServer(
@@ -77,12 +112,16 @@ async def _activity_type_catalog() -> dict[str, Any]:
     )
 )
 def server_info() -> dict[str, Any]:
-    """Show non-sensitive information about this OSIRIS MCP server."""
+    """Show version, license, source availability, and connection status."""
 
     settings = get_settings()
     return {
         "name": "OSIRIS MCP",
         "version": __version__,
+        "license": __license__,
+        "source_code": (
+            str(settings.mcp_source_url) if settings.mcp_source_url else None
+        ),
         "mode": "read-only development",
         "osiris_configured": settings.base_url is not None,
     }
@@ -96,6 +135,7 @@ def server_info() -> dict[str, Any]:
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def get_instance_info() -> dict[str, Any]:
     """Describe this OSIRIS instance, its features, and supported filters."""
 
@@ -110,6 +150,7 @@ async def get_instance_info() -> dict[str, Any]:
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def list_units(
     query: str | None = None,
     limit: int = 50,
@@ -134,6 +175,7 @@ async def list_units(
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def list_topics(
     query: str | None = None,
     limit: int = 50,
@@ -158,6 +200,7 @@ async def list_topics(
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def list_activity_types() -> dict[str, Any]:
     """List the exact activity category and subtype IDs used by this instance."""
 
@@ -172,6 +215,7 @@ async def list_activity_types() -> dict[str, Any]:
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def search_activities(
     query: str | None = None,
     from_date: str | None = None,
@@ -227,6 +271,7 @@ async def search_activities(
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def get_activity(activity_id: str) -> dict[str, Any]:
     """Get one compact, citation-centered activity by its exact OSIRIS ID."""
 
@@ -244,6 +289,7 @@ async def get_activity(activity_id: str) -> dict[str, Any]:
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def search_people(
     query: str,
     unit: str | None = None,
@@ -279,6 +325,7 @@ async def search_people(
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def get_person(person_id: str) -> dict[str, Any]:
     """Get one compact research profile by exact OSIRIS username."""
 
@@ -296,6 +343,7 @@ async def get_person(person_id: str) -> dict[str, Any]:
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def search_experts(
     query: str,
     unit: str | None = None,
@@ -330,6 +378,7 @@ async def search_experts(
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def search_projects(
     query: str | None = None,
     active_on: str | None = None,
@@ -369,6 +418,7 @@ async def search_projects(
         openWorldHint=True,
     )
 )
+@_expose_expected_tool_errors
 async def get_project(project_id: str) -> dict[str, Any]:
     """Get one OSIRIS project and its allowlisted details by project ID."""
 
