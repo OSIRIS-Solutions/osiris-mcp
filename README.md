@@ -25,6 +25,58 @@ Start the local stdio server:
 uv run osiris-mcp
 ```
 
+## Local Docker container
+
+The included Compose configuration runs OSIRIS MCP as a persistent local
+Streamable HTTP service. It requires Docker but no local Python installation.
+
+```bash
+cp .env.example .env
+# Configure the OSIRIS URL, client ID, API key, and source URL in .env.
+docker compose up --build -d
+```
+
+The MCP endpoint is then available at `http://127.0.0.1:8765/mcp` and the
+minimal process health check at `http://127.0.0.1:8765/health`. Stop it with:
+
+```bash
+docker compose down
+```
+
+The published port is deliberately bound to `127.0.0.1`. This preview has no
+MCP client authentication and must never be exposed on a LAN, through a reverse
+proxy, or on the public internet. OAuth/OIDC protection is required before a
+remote deployment. DNS-rebinding protection additionally permits only local
+Host and Origin values, but it is not a substitute for the loopback binding.
+
+The image runs as an unprivileged user with a read-only filesystem, all Linux
+capabilities removed, and `no-new-privileges` enabled. Its health response does
+not test OSIRIS or reveal configuration. The build also places the Corresponding
+Source in `/usr/src/osiris-mcp` inside the image.
+
+On Docker Desktop, an OSIRIS instance running directly on the host is commonly
+reachable as `host.docker.internal`. If a local virtual host such as
+`osiris.test` must retain its hostname, create an ignored `compose.override.yaml`:
+
+```yaml
+services:
+  osiris-mcp:
+    extra_hosts:
+      - "osiris.test:host-gateway"
+```
+
+The command-line entry point supports these transport settings:
+
+- `OSIRIS_MCP_TRANSPORT`: `stdio` (default) or `streamable-http`
+- `OSIRIS_MCP_HOST`: `127.0.0.1`, `localhost`, or `0.0.0.0`
+- `OSIRIS_MCP_PORT`: internal HTTP port, default `8000`
+- `OSIRIS_MCP_PATH`: MCP path, default `/mcp`
+- `OSIRIS_MCP_PUBLISHED_PORT`: host port used by Compose, default `8765`
+
+For orchestrator-managed secrets, omit `OSIRIS_API_KEY` and set
+`OSIRIS_API_KEY_FILE` to a mounted secret file instead. Configuring both is
+rejected to avoid ambiguous secret precedence.
+
 Open it in the MCP Inspector:
 
 ```bash

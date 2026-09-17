@@ -1,0 +1,25 @@
+services:
+  osiris-mcp:
+    image: osiris-mcp:local
+    build:
+      context: .
+      args:
+        SOURCE_URL: ${OSIRIS_MCP_SOURCE_URL:-}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${OSIRIS_MCP_ENV_FILE:-.env}
+    environment:
+      OSIRIS_MCP_TRANSPORT: streamable-http
+      OSIRIS_MCP_HOST: 0.0.0.0
+      OSIRIS_MCP_PORT: 8000
+      OSIRIS_MCP_PATH: /mcp
+    ports:
+      - "127.0.0.1:${OSIRIS_MCP_PUBLISHED_PORT:-8765}:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

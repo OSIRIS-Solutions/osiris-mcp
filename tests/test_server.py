@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Julia Koblitz, OSIRIS Solutions GmbH
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import httpx
 from mcp import Client
 import pytest
 
@@ -59,6 +60,7 @@ async def test_server_info_reports_configuration_without_exposing_secrets() -> N
     assert result.structured_content["license"] == "AGPL-3.0-or-later"
     assert "source_code" in result.structured_content
     assert result.structured_content["mode"] == "read-only development"
+    assert result.structured_content["transport"] in {"stdio", "streamable-http"}
     assert isinstance(result.structured_content["osiris_configured"], bool)
     assert "api_key" not in result.structured_content
 
@@ -125,3 +127,69 @@ async def test_local_validation_error_explains_absent_request_id(
     assert result.is_error is True
     assert "activity_id must be a 24-character hexadecimal ID" in message
     assert "OSIRIS was not called; no request ID is available" in message
+
+
+async def test_health_check_discloses_no_configuration() -> None:
+    app = mcp.streamable_http_app(
+        streamable_http_path="/mcp",
+        stateless_http=True,
+        json_response=True,
+        transport_security=server_module._local_transport_security(),
+        host="0.0.0.0",
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://localhost",
+    ) as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_run_uses_stdio_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_run(*args: object, **kwargs: object) -> None:
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(server_module.mcp, "run", fake_run)
+
+    server_module.run(Settings(_env_file=None))
+
+    assert calls == [((), {})]
+
+
+def test_run_uses_hardened_local_http_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def fake_run(*args: object, **kwargs: object) -> None:
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(server_module.mcp, "run", fake_run)
+    settings = Settings(
+        mcp_transport="streamable-http",
+        mcp_host="0.0.0.0",
+        mcp_port=8765,
+        mcp_path="/custom-mcp",
+        _env_file=None,
+    )
+
+    server_module.run(settings)
+
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == ()
+    assert kwargs["transport"] == "streamable-http"
+    assert kwargs["host"] == "0.0.0.0"
+    assert kwargs["port"] == 8765
+    assert kwargs["streamable_http_path"] == "/custom-mcp"
+    assert kwargs["stateless_http"] is True
+    assert kwargs["json_response"] is True
+    assert kwargs["max_request_body_size"] == 1024 * 1024
+    security = kwargs["transport_security"]
+    assert isinstance(security, server_module.TransportSecuritySettings)
+    assert "localhost:*" in security.allowed_hosts

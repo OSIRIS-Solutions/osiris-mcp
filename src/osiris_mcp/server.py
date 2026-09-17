@@ -11,16 +11,20 @@ from typing import Any, ParamSpec, TypeVar
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from osiris_mcp import __license__, __version__
 from osiris_mcp.client import OsirisApiError, OsirisClient
-from osiris_mcp.config import get_settings
+from osiris_mcp.config import Settings, get_settings
 
 
 # HTTPX logs complete request URLs at INFO level. MCP query parameters can
 # contain names or research questions, so only warnings and errors are retained.
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
 
 P = ParamSpec("P")
@@ -65,6 +69,16 @@ mcp = MCPServer(
         "exhaustive results, continue with next_offset until has_more is false."
     ),
 )
+
+
+@mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
+async def health_check(_: Request) -> JSONResponse:
+    """Return process health without revealing configuration or dependencies."""
+
+    return JSONResponse(
+        {"status": "ok"},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 async def _instance_info() -> dict[str, Any]:
@@ -123,6 +137,7 @@ def server_info() -> dict[str, Any]:
             str(settings.mcp_source_url) if settings.mcp_source_url else None
         ),
         "mode": "read-only development",
+        "transport": settings.mcp_transport,
         "osiris_configured": settings.base_url is not None,
     }
 
@@ -524,10 +539,47 @@ async def activity_types_resource() -> str:
     return json.dumps(await _activity_type_catalog(), ensure_ascii=False)
 
 
-def main() -> None:
-    """Run the MCP server over stdio for local development."""
+def _local_transport_security() -> TransportSecuritySettings:
+    """Restrict the unauthenticated HTTP preview to local host names."""
 
-    mcp.run()
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"],
+        allowed_origins=[
+            "http://127.0.0.1:*",
+            "http://localhost:*",
+            "http://[::1]:*",
+        ],
+    )
+
+
+def run(settings: Settings) -> None:
+    """Run the configured local transport."""
+
+    if settings.mcp_transport == "stdio":
+        mcp.run()
+        return
+
+    logger.warning(
+        "Starting unauthenticated local HTTP mode; publish the container port "
+        "on 127.0.0.1 only"
+    )
+    mcp.run(
+        transport="streamable-http",
+        host=settings.mcp_host,
+        port=settings.mcp_port,
+        streamable_http_path=settings.mcp_path,
+        stateless_http=True,
+        json_response=True,
+        max_request_body_size=1024 * 1024,
+        transport_security=_local_transport_security(),
+    )
+
+
+def main() -> None:
+    """Run OSIRIS MCP using environment-based transport settings."""
+
+    run(get_settings())
 
 
 if __name__ == "__main__":
