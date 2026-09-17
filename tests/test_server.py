@@ -45,6 +45,8 @@ async def test_server_exposes_initial_read_only_tools() -> None:
 
     activity_tool = next(tool for tool in result.tools if tool.name == "search_activities")
     properties = activity_tool.input_schema["properties"]
+    assert properties["date_field"]["default"] == "start"
+    assert properties["date_field"]["enum"] == ["start", "end"]
     assert properties["include_unaffiliated"]["default"] is False
     assert properties["include_online_ahead_of_print"]["default"] is False
 

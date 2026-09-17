@@ -5,7 +5,7 @@
 
 from datetime import date
 import re
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from urllib.parse import quote
 
 import httpx
@@ -179,6 +179,7 @@ class OsirisClient:
         query: str | None = None,
         from_date: str | None = None,
         to_date: str | None = None,
+        date_field: Literal["start", "end"] = "start",
         type: str | None = None,
         subtype: str | None = None,
         person: str | None = None,
@@ -216,6 +217,10 @@ class OsirisClient:
             and parsed_dates["from_date"] > parsed_dates["to_date"]
         ):
             raise ValueError("from_date must not be after to_date")
+        if date_field not in {"start", "end"}:
+            raise ValueError("date_field must be start or end")
+        if date_field != "start":
+            params.append(("date_field", date_field))
 
         for name, value in (
             ("type", type),

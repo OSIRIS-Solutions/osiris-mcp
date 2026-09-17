@@ -222,13 +222,15 @@ The available read-only tools are:
   allowlist.
 - `get_project`: retrieves the allowlisted details of one project by ID.
 
-Activity date filters inclusively constrain `start_date`; for example,
+Activity date filters use `date_field=start` by default; for example,
 `from_date=2026-09-01` and `to_date=2026-09-30` select activities starting in
-September 2026. Activity searches include only affiliated records and exclude
-Online-ahead-of-print records by default. Exceptional searches can opt in with
-`include_unaffiliated=true` or `include_online_ahead_of_print=true`. Project
-searches can be narrowed by a free-text query, an `active_on` date in
-`YYYY-MM-DD` format, exact status, topic, organizational unit, and result limit.
+September 2026. Set `date_field=end` to select activities completed in that
+period, such as completed theses. Activity searches include only affiliated
+records and exclude Online-ahead-of-print records by default. Exceptional
+searches can opt in with `include_unaffiliated=true` or
+`include_online_ahead_of_print=true`. Project searches can be narrowed by a
+free-text query, an `active_on` date in `YYYY-MM-DD` format, exact status, topic,
+organizational unit, and result limit.
 Topic and unit filters always require exact instance-specific IDs. Clients
 should obtain them with `list_topics` and `list_units` rather than guessing.
 

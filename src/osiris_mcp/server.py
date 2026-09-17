@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from functools import wraps
 import json
 import logging
-from typing import Any, ParamSpec, TypeVar
+from typing import Any, Literal, ParamSpec, TypeVar
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -239,6 +239,7 @@ async def search_activities(
     query: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    date_field: Literal["start", "end"] = "start",
     type: str | None = None,
     subtype: str | None = None,
     person: str | None = None,
@@ -251,7 +252,9 @@ async def search_activities(
 ) -> dict[str, Any]:
     """Search activities and return compact, citation-centered evidence.
 
-    Dates inclusively constrain the activity start date and use YYYY-MM-DD.
+    Dates use YYYY-MM-DD and inclusively constrain the field selected by
+    ``date_field``. Use ``start`` for activities that began in a period and
+    ``end`` for activities completed in a period, such as completed theses.
     By default, results include only affiliated activities and exclude records
     marked Online ahead of print. Set the corresponding include flag to true
     only when the user explicitly requests those exceptional records. Type,
@@ -269,6 +272,7 @@ async def search_activities(
             query=query,
             from_date=from_date,
             to_date=to_date,
+            date_field=date_field,
             type=type,
             subtype=subtype,
             person=person,

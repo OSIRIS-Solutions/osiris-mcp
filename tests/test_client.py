@@ -435,6 +435,7 @@ async def test_activity_search_returns_only_compact_evidence() -> None:
             query="diversity",
             from_date="2026-01-01",
             to_date="2026-12-31",
+            date_field="end",
             type="publication",
             subtype="article",
             person="julia",
@@ -449,6 +450,7 @@ async def test_activity_search_returns_only_compact_evidence() -> None:
     assert captured_request.url.path == "/api/mcp/activities"
     assert captured_request.url.params["from_date"] == "2026-01-01"
     assert captured_request.url.params["to_date"] == "2026-12-31"
+    assert captured_request.url.params["date_field"] == "end"
     assert captured_request.url.params["type"] == "publication"
     assert captured_request.url.params["subtype"] == "article"
     assert captured_request.url.params["person"] == "julia"
@@ -488,6 +490,28 @@ async def test_activity_search_rejects_reversed_date_range() -> None:
             assert str(exc) == "from_date must not be after to_date"
         else:
             raise AssertionError("expected a reversed date range to be rejected")
+
+
+async def test_activity_search_omits_default_start_date_field() -> None:
+    captured_request: httpx.Request | None = None
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_request
+        captured_request = request
+        return httpx.Response(
+            200,
+            json={"status": 200, "count": 0, "total": 0, "data": []},
+        )
+
+    settings = Settings(base_url="https://osiris.example.org")
+    async with OsirisClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        await client.search_activities(from_date="2026-01-01")
+
+    assert captured_request is not None
+    assert "date_field" not in captured_request.url.params
 
 
 async def test_activity_search_exposes_complete_pagination_metadata() -> None:
