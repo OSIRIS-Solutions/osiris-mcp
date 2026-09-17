@@ -41,11 +41,19 @@ class Settings(BaseSettings):
     mcp_public_url: HttpUrl | None = None
     mcp_oauth_issuer_url: HttpUrl | None = None
     mcp_oauth_introspection_url: HttpUrl | None = None
+    mcp_oauth_introspection_host_header: str | None = Field(
+        default=None,
+        pattern=(
+            r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?"
+            r"|\[[0-9A-Fa-f:.]+\])(?::[1-9][0-9]{0,4})?$"
+        ),
+    )
     mcp_oauth_client_id: str | None = None
     mcp_oauth_client_secret: SecretStr | None = None
     mcp_oauth_client_secret_file: Path | None = None
     mcp_oauth_required_scopes: str = "osiris:read"
     mcp_oauth_audience: str | None = None
+    mcp_oauth_allow_insecure_introspection: bool = False
     mcp_allowed_hosts: str | None = None
     mcp_allowed_origins: str | None = None
 
@@ -101,14 +109,23 @@ class Settings(BaseSettings):
             for name, url in (
                 ("OSIRIS_MCP_PUBLIC_URL", self.mcp_public_url),
                 ("OSIRIS_MCP_OAUTH_ISSUER_URL", self.mcp_oauth_issuer_url),
-                (
-                    "OSIRIS_MCP_OAUTH_INTROSPECTION_URL",
-                    self.mcp_oauth_introspection_url,
-                ),
             ):
                 assert url is not None
                 if url.scheme != "https" and url.host not in {"127.0.0.1", "localhost"}:
                     raise ValueError(f"{name} must use HTTPS outside localhost")
+            assert self.mcp_oauth_introspection_url is not None
+            introspection = self.mcp_oauth_introspection_url
+            if (
+                introspection.scheme != "https"
+                and introspection.host not in {"127.0.0.1", "localhost"}
+                and not self.mcp_oauth_allow_insecure_introspection
+            ):
+                raise ValueError(
+                    "OSIRIS_MCP_OAUTH_INTROSPECTION_URL must use HTTPS outside "
+                    "localhost; explicitly enable "
+                    "OSIRIS_MCP_OAUTH_ALLOW_INSECURE_INTROSPECTION only for a "
+                    "trusted development network"
+                )
 
         return self
 

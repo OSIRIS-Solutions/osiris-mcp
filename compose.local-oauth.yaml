@@ -1,0 +1,12 @@
+# Local development overlay for Keycloak and OSIRIS running on the Docker host.
+# Never use this HTTP-only bridge configuration in production.
+services:
+  osiris-mcp:
+    environment:
+      OSIRIS_MCP_PUBLIC_URL: http://127.0.0.1:${OSIRIS_MCP_PUBLISHED_PORT:-8765}/mcp
+      OSIRIS_MCP_OAUTH_INTROSPECTION_URL: ${OSIRIS_MCP_DOCKER_OAUTH_INTROSPECTION_URL:-http://host.docker.internal:8080/realms/osiris/protocol/openid-connect/token/introspect}
+      OSIRIS_MCP_OAUTH_INTROSPECTION_HOST_HEADER: ${OSIRIS_MCP_DOCKER_OAUTH_HOST_HEADER:-127.0.0.1:8080}
+      OSIRIS_MCP_OAUTH_ALLOW_INSECURE_INTROSPECTION: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "osiris.test:host-gateway"

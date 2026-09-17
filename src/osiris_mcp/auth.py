@@ -52,6 +52,11 @@ class IntrospectionTokenVerifier(TokenVerifier):
         self._resource = str(settings.mcp_public_url)
         self._issuer = str(settings.mcp_oauth_issuer_url).rstrip("/")
         self._introspection_url = str(settings.mcp_oauth_introspection_url)
+        self._introspection_headers = {"Accept": "application/json"}
+        if settings.mcp_oauth_introspection_host_header is not None:
+            self._introspection_headers["Host"] = (
+                settings.mcp_oauth_introspection_host_header
+            )
         self._client_id = settings.mcp_oauth_client_id
         self._client_secret = settings.mcp_oauth_client_secret.get_secret_value()
         self._audience = settings.mcp_oauth_audience or self._resource
@@ -66,7 +71,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
                     self._introspection_url,
                     data={"token": token, "token_type_hint": "access_token"},
                     auth=httpx.BasicAuth(self._client_id, self._client_secret),
-                    headers={"Accept": "application/json"},
+                    headers=self._introspection_headers,
                 )
         except httpx.HTTPError:
             logger.warning("OAuth token introspection request failed")

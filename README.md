@@ -54,15 +54,28 @@ capabilities removed, and `no-new-privileges` enabled. Its health response does
 not test OSIRIS or reveal configuration. The build also places the Corresponding
 Source in `/usr/src/osiris-mcp` inside the image.
 
-On Docker Desktop, an OSIRIS instance running directly on the host is commonly
-reachable as `host.docker.internal`. If a local virtual host such as
-`osiris.test` must retain its hostname, create an ignored `compose.override.yaml`:
+On Docker Desktop, services running directly on the host are reachable from the
+container as `host.docker.internal`. The included local OAuth overlay also maps
+the `osiris.test` virtual host to the Docker host.
 
-```yaml
-services:
-  osiris-mcp:
-    extra_hosts:
-      - "osiris.test:host-gateway"
+For the local Keycloak setup described below, keep its public issuer at
+`http://127.0.0.1:8080/realms/osiris` so browser discovery remains stable, and
+start OSIRIS MCP with:
+
+```bash
+docker compose -f compose.yaml -f compose.local-oauth.yaml up --build -d
+```
+
+The overlay changes the container's back-channel introspection URL to
+`host.docker.internal`, while retaining `127.0.0.1:8080` as its HTTP `Host`
+header. This is necessary because local Keycloak tokens use the public issuer
+hostname and Keycloak otherwise treats them as inactive during introspection.
+The overlay also sets the public MCP URL to the published port `8765` and
+explicitly permits unencrypted introspection on this trusted local Docker
+bridge. It must not be used for a production deployment. Stop this stack with:
+
+```bash
+docker compose -f compose.yaml -f compose.local-oauth.yaml down
 ```
 
 The command-line entry point supports these transport settings:
@@ -116,6 +129,14 @@ The introspection client secret is an identity-provider credential and should
 be mounted as a secret file. It is never forwarded to OSIRIS. The access token
 received from the MCP client is likewise never passed to OSIRIS; downstream
 requests always use the dedicated `OSIRIS_API_KEY`.
+
+HTTP introspection on a non-loopback hostname is rejected by default. The
+`OSIRIS_MCP_OAUTH_ALLOW_INSECURE_INTROSPECTION` escape hatch exists only for the
+local Docker bridge overlay. Production introspection must use HTTPS.
+When a private back-channel URL reaches the same authorization server through a
+different hostname, `OSIRIS_MCP_OAUTH_INTROSPECTION_HOST_HEADER` can explicitly
+preserve the public issuer's HTTP host. Leave it unset unless the authorization
+server or reverse proxy requires this routing behavior.
 
 ### Static API-key mode
 

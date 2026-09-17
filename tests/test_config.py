@@ -107,3 +107,37 @@ def test_oauth_scopes_accept_spaces_and_commas() -> None:
     )
 
     assert settings.mcp_oauth_required_scope_list == ["osiris:read", "profile"]
+
+
+def test_insecure_introspection_requires_explicit_development_opt_in() -> None:
+    values = {
+        "mcp_transport": "streamable-http",
+        "mcp_auth_mode": "oauth",
+        "mcp_public_url": "http://127.0.0.1:8765/mcp",
+        "mcp_oauth_issuer_url": "http://127.0.0.1:8080/realms/osiris",
+        "mcp_oauth_introspection_url": (
+            "http://host.docker.internal:8080/realms/osiris/"
+            "protocol/openid-connect/token/introspect"
+        ),
+        "mcp_oauth_client_id": "osiris-mcp",
+        "mcp_oauth_client_secret": "secret",
+        "_env_file": None,
+    }
+
+    with pytest.raises(ValidationError, match="trusted development network"):
+        Settings(**values)
+
+    settings = Settings(
+        **values,
+        mcp_oauth_allow_insecure_introspection=True,
+        mcp_oauth_introspection_host_header="127.0.0.1:8080",
+    )
+    assert settings.mcp_oauth_allow_insecure_introspection is True
+    assert settings.mcp_oauth_introspection_host_header == "127.0.0.1:8080"
+
+    with pytest.raises(ValidationError):
+        Settings(
+            **values,
+            mcp_oauth_allow_insecure_introspection=True,
+            mcp_oauth_introspection_host_header="127.0.0.1:8080\r\nX-Test: bad",
+        )

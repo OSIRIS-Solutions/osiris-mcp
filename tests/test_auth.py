@@ -119,6 +119,7 @@ async def test_introspection_verifier_checks_audience_and_expiry(
         async def post(self, url: str, **kwargs: Any) -> httpx.Response:
             seen["url"] = url
             seen["data"] = kwargs["data"]
+            seen["headers"] = kwargs["headers"]
             request = httpx.Request("POST", url)
             return httpx.Response(200, json=payload, request=request)
 
@@ -132,6 +133,39 @@ async def test_introspection_verifier_checks_audience_and_expiry(
     assert token.subject == "julia"
     assert token.scopes == ["osiris:read", "profile"]
     assert seen["data"]["token"] == "opaque-access-token"
+    assert seen["headers"] == {"Accept": "application/json"}
 
     payload["aud"] = ["https://another-service.example.org"]
     assert await verifier.verify_token("wrong-audience") is None
+
+
+async def test_introspection_verifier_can_override_backchannel_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            del kwargs
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def post(self, url: str, **kwargs: Any) -> httpx.Response:
+            seen["headers"] = kwargs["headers"]
+            request = httpx.Request("POST", url)
+            return httpx.Response(200, json={"active": False}, request=request)
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    verifier = IntrospectionTokenVerifier(
+        oauth_settings(mcp_oauth_introspection_host_header="login.example.org")
+    )
+
+    assert await verifier.verify_token("opaque-access-token") is None
+    assert seen["headers"] == {
+        "Accept": "application/json",
+        "Host": "login.example.org",
+    }
