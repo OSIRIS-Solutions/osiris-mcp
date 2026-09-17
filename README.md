@@ -43,11 +43,11 @@ minimal process health check at `http://127.0.0.1:8765/health`. Stop it with:
 docker compose down
 ```
 
-The published port is deliberately bound to `127.0.0.1`. This preview has no
-MCP client authentication and must never be exposed on a LAN, through a reverse
-proxy, or on the public internet. OAuth/OIDC protection is required before a
-remote deployment. DNS-rebinding protection additionally permits only local
-Host and Origin values, but it is not a substitute for the loopback binding.
+The published port is deliberately bound to `127.0.0.1`. The default
+`OSIRIS_MCP_AUTH_MODE=none` is suitable only for this loopback setup and must
+never be exposed on a LAN, through a reverse proxy, or on the public internet.
+DNS-rebinding protection additionally permits only local Host and Origin values,
+but it is not a substitute for authentication or the loopback binding.
 
 The image runs as an unprivileged user with a read-only filesystem, all Linux
 capabilities removed, and `no-new-privileges` enabled. Its health response does
@@ -72,10 +72,86 @@ The command-line entry point supports these transport settings:
 - `OSIRIS_MCP_PORT`: internal HTTP port, default `8000`
 - `OSIRIS_MCP_PATH`: MCP path, default `/mcp`
 - `OSIRIS_MCP_PUBLISHED_PORT`: host port used by Compose, default `8765`
+- `OSIRIS_MCP_AUTH_MODE`: `none`, `api-key`, or `oauth`
 
 For orchestrator-managed secrets, omit `OSIRIS_API_KEY` and set
 `OSIRIS_API_KEY_FILE` to a mounted secret file instead. Configuring both is
 rejected to avoid ambiguous secret precedence.
+
+## Inbound MCP authentication
+
+Authentication protects access from an MCP client to this server. It is
+separate from `OSIRIS_API_KEY`, which the server uses for its downstream calls
+to OSIRIS. Authentication applies only to Streamable HTTP; stdio relies on the
+security boundary of the process that launches it.
+
+### OAuth/OIDC resource-server mode
+
+`oauth` is the production mode for remotely reachable installations. OSIRIS MCP
+does not implement login, consent, or token issuance. An external authorization
+server such as Keycloak or another institutional provider with an RFC 7662
+introspection endpoint does that. OSIRIS MCP validates every access token
+through that endpoint and verifies activity, expiry, issuer, audience, and the
+required scopes.
+
+```dotenv
+OSIRIS_MCP_TRANSPORT=streamable-http
+OSIRIS_MCP_AUTH_MODE=oauth
+OSIRIS_MCP_PUBLIC_URL=https://mcp.example.org/mcp
+OSIRIS_MCP_OAUTH_ISSUER_URL=https://login.example.org/realms/osiris
+OSIRIS_MCP_OAUTH_INTROSPECTION_URL=https://login.example.org/realms/osiris/protocol/openid-connect/token/introspect
+OSIRIS_MCP_OAUTH_CLIENT_ID=osiris-mcp
+OSIRIS_MCP_OAUTH_CLIENT_SECRET_FILE=/run/secrets/oauth_client_secret
+OSIRIS_MCP_OAUTH_REQUIRED_SCOPES=osiris:read
+```
+
+The public URL must identify the exact MCP endpoint, including its path. HTTPS
+is mandatory outside localhost. By default the token audience must equal this
+URL; set `OSIRIS_MCP_OAUTH_AUDIENCE` only when the identity provider uses a
+different API audience identifier. The MCP SDK publishes RFC 9728 Protected
+Resource Metadata and returns standards-compliant `401` and `403` challenges,
+allowing capable clients to discover the authorization server automatically.
+
+The introspection client secret is an identity-provider credential and should
+be mounted as a secret file. It is never forwarded to OSIRIS. The access token
+received from the MCP client is likewise never passed to OSIRIS; downstream
+requests always use the dedicated `OSIRIS_API_KEY`.
+
+### Static API-key mode
+
+`api-key` is a simpler option for a controlled internal network or a single
+trusted client that supports fixed HTTP headers. Generate a random secret of at
+least 32 characters and configure the client to send it on every MCP request:
+
+```dotenv
+OSIRIS_MCP_TRANSPORT=streamable-http
+OSIRIS_MCP_AUTH_MODE=api-key
+OSIRIS_MCP_API_KEY_FILE=/run/secrets/osiris_mcp_api_key
+```
+
+```http
+Authorization: Bearer <OSIRIS_MCP_API_KEY>
+```
+
+For local Compose, place the key in the ignored `secrets/` directory and add
+the mount to `compose.override.yaml`:
+
+```yaml
+services:
+  osiris-mcp:
+    volumes:
+      - ./secrets/osiris_mcp_api_key:/run/secrets/osiris_mcp_api_key:ro
+```
+
+This mode uses constant-time secret comparison, rejects missing or malformed
+credentials with `401`, and leaves `/health` public. It intentionally publishes
+no OAuth discovery metadata and therefore does not provide interactive login,
+individual user identities, scopes, or automatic token rotation. Use it behind
+TLS and network restrictions; prefer OAuth for multi-user or public deployments.
+
+`none` remains available for stdio and loopback-only development. The server
+rejects `api-key` or `oauth` configuration with stdio so operators cannot assume
+that a pipe is protected by HTTP authentication.
 
 Open it in the MCP Inspector:
 

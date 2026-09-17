@@ -35,24 +35,123 @@ class Settings(BaseSettings):
     mcp_host: Literal["127.0.0.1", "localhost", "0.0.0.0"] = "127.0.0.1"
     mcp_port: int = Field(default=8000, ge=1, le=65535)
     mcp_path: str = Field(default="/mcp", pattern=r"^/[A-Za-z0-9/_-]+$")
+    mcp_auth_mode: Literal["none", "api-key", "oauth"] = "none"
+    mcp_api_key: SecretStr | None = None
+    mcp_api_key_file: Path | None = None
+    mcp_public_url: HttpUrl | None = None
+    mcp_oauth_issuer_url: HttpUrl | None = None
+    mcp_oauth_introspection_url: HttpUrl | None = None
+    mcp_oauth_client_id: str | None = None
+    mcp_oauth_client_secret: SecretStr | None = None
+    mcp_oauth_client_secret_file: Path | None = None
+    mcp_oauth_required_scopes: str = "osiris:read"
+    mcp_oauth_audience: str | None = None
+    mcp_allowed_hosts: str | None = None
+    mcp_allowed_origins: str | None = None
 
     @model_validator(mode="after")
     def load_api_key_file(self) -> "Settings":
-        """Load a Docker/Kubernetes secret without exposing its content."""
+        """Load secret files and reject unsafe or incomplete auth settings."""
 
-        if self.api_key is not None and self.api_key_file is not None:
-            raise ValueError("configure either OSIRIS_API_KEY or OSIRIS_API_KEY_FILE")
-        if self.api_key_file is None:
-            return self
+        self.api_key = self._load_secret(
+            self.api_key,
+            self.api_key_file,
+            "OSIRIS_API_KEY",
+        )
+        self.mcp_api_key = self._load_secret(
+            self.mcp_api_key,
+            self.mcp_api_key_file,
+            "OSIRIS_MCP_API_KEY",
+        )
+        self.mcp_oauth_client_secret = self._load_secret(
+            self.mcp_oauth_client_secret,
+            self.mcp_oauth_client_secret_file,
+            "OSIRIS_MCP_OAUTH_CLIENT_SECRET",
+        )
 
-        try:
-            value = self.api_key_file.read_text(encoding="utf-8").strip()
-        except OSError as exc:
-            raise ValueError("OSIRIS_API_KEY_FILE could not be read") from exc
-        if not value:
-            raise ValueError("OSIRIS_API_KEY_FILE must not be empty")
-        self.api_key = SecretStr(value)
+        if self.mcp_auth_mode != "none" and self.mcp_transport != "streamable-http":
+            raise ValueError("MCP authentication requires streamable-http transport")
+
+        if self.mcp_auth_mode == "api-key":
+            if self.mcp_api_key is None:
+                raise ValueError("api-key mode requires OSIRIS_MCP_API_KEY")
+            if len(self.mcp_api_key.get_secret_value()) < 32:
+                raise ValueError("OSIRIS_MCP_API_KEY must contain at least 32 characters")
+
+        if self.mcp_auth_mode == "oauth":
+            required = {
+                "OSIRIS_MCP_PUBLIC_URL": self.mcp_public_url,
+                "OSIRIS_MCP_OAUTH_ISSUER_URL": self.mcp_oauth_issuer_url,
+                "OSIRIS_MCP_OAUTH_INTROSPECTION_URL": (
+                    self.mcp_oauth_introspection_url
+                ),
+                "OSIRIS_MCP_OAUTH_CLIENT_ID": self.mcp_oauth_client_id,
+                "OSIRIS_MCP_OAUTH_CLIENT_SECRET": self.mcp_oauth_client_secret,
+            }
+            missing = [name for name, value in required.items() if value is None]
+            if missing:
+                raise ValueError(f"oauth mode requires {', '.join(missing)}")
+            if not self.mcp_oauth_required_scope_list:
+                raise ValueError("OSIRIS_MCP_OAUTH_REQUIRED_SCOPES must not be empty")
+            assert self.mcp_public_url is not None
+            public_path = self.mcp_public_url.path.rstrip("/") or "/"
+            configured_path = self.mcp_path.rstrip("/") or "/"
+            if public_path != configured_path:
+                raise ValueError("OSIRIS_MCP_PUBLIC_URL path must match OSIRIS_MCP_PATH")
+            for name, url in (
+                ("OSIRIS_MCP_PUBLIC_URL", self.mcp_public_url),
+                ("OSIRIS_MCP_OAUTH_ISSUER_URL", self.mcp_oauth_issuer_url),
+                (
+                    "OSIRIS_MCP_OAUTH_INTROSPECTION_URL",
+                    self.mcp_oauth_introspection_url,
+                ),
+            ):
+                assert url is not None
+                if url.scheme != "https" and url.host not in {"127.0.0.1", "localhost"}:
+                    raise ValueError(f"{name} must use HTTPS outside localhost")
+
         return self
+
+    @staticmethod
+    def _load_secret(
+        direct: SecretStr | None,
+        file_path: Path | None,
+        setting_name: str,
+    ) -> SecretStr | None:
+        if direct is not None and file_path is not None:
+            raise ValueError(f"configure either {setting_name} or {setting_name}_FILE")
+        if file_path is None:
+            return direct
+        try:
+            value = file_path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ValueError(f"{setting_name}_FILE could not be read") from exc
+        if not value:
+            raise ValueError(f"{setting_name}_FILE must not be empty")
+        return SecretStr(value)
+
+    @property
+    def mcp_oauth_required_scope_list(self) -> list[str]:
+        """Return the configured OAuth scopes in stable, deduplicated order."""
+
+        scopes = self.mcp_oauth_required_scopes.replace(",", " ").split()
+        return list(dict.fromkeys(scopes))
+
+    @property
+    def mcp_allowed_host_list(self) -> list[str]:
+        """Return explicit Host allow-list entries."""
+
+        if not self.mcp_allowed_hosts:
+            return []
+        return [value.strip() for value in self.mcp_allowed_hosts.split(",") if value.strip()]
+
+    @property
+    def mcp_allowed_origin_list(self) -> list[str]:
+        """Return explicit Origin allow-list entries."""
+
+        if not self.mcp_allowed_origins:
+            return []
+        return [value.strip() for value in self.mcp_allowed_origins.split(",") if value.strip()]
 
 
 @lru_cache

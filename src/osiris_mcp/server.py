@@ -15,8 +15,10 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+import uvicorn
 
 from osiris_mcp import __license__, __version__
+from osiris_mcp.auth import ApiKeyMiddleware, oauth_server_options
 from osiris_mcp.client import OsirisApiError, OsirisClient
 from osiris_mcp.config import Settings, get_settings
 
@@ -68,6 +70,7 @@ mcp = MCPServer(
         "Search results are paginated. If the user asks for all, complete, or "
         "exhaustive results, continue with next_offset until has_more is false."
     ),
+    **oauth_server_options(get_settings()),
 )
 
 
@@ -138,6 +141,7 @@ def server_info() -> dict[str, Any]:
         ),
         "mode": "read-only development",
         "transport": settings.mcp_transport,
+        "authentication": settings.mcp_auth_mode,
         "osiris_configured": settings.base_url is not None,
     }
 
@@ -539,18 +543,38 @@ async def activity_types_resource() -> str:
     return json.dumps(await _activity_type_catalog(), ensure_ascii=False)
 
 
-def _local_transport_security() -> TransportSecuritySettings:
-    """Restrict the unauthenticated HTTP preview to local host names."""
+def _transport_security(settings: Settings | None = None) -> TransportSecuritySettings:
+    """Build an explicit Host/Origin allow-list for the HTTP endpoint."""
+
+    settings = settings or Settings(_env_file=None)
+    allowed_hosts = settings.mcp_allowed_host_list or [
+        "127.0.0.1:*",
+        "localhost:*",
+        "[::1]:*",
+    ]
+    allowed_origins = settings.mcp_allowed_origin_list or [
+        "http://127.0.0.1:*",
+        "http://localhost:*",
+        "http://[::1]:*",
+    ]
+    if settings.mcp_public_url is not None:
+        host = settings.mcp_public_url.host
+        if host and not settings.mcp_allowed_host_list:
+            allowed_hosts.append(f"{host}:*")
+        if host and not settings.mcp_allowed_origin_list:
+            allowed_origins.append(f"{settings.mcp_public_url.scheme}://{host}:*")
 
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
-        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"],
-        allowed_origins=[
-            "http://127.0.0.1:*",
-            "http://localhost:*",
-            "http://[::1]:*",
-        ],
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
     )
+
+
+def _local_transport_security() -> TransportSecuritySettings:
+    """Backward-compatible helper for local tests and integrations."""
+
+    return _transport_security()
 
 
 def run(settings: Settings) -> None:
@@ -561,18 +585,33 @@ def run(settings: Settings) -> None:
         return
 
     logger.warning(
-        "Starting unauthenticated local HTTP mode; publish the container port "
-        "on 127.0.0.1 only"
+        "Starting HTTP transport with authentication mode %s",
+        settings.mcp_auth_mode,
     )
+    app_options = {
+        "streamable_http_path": settings.mcp_path,
+        "stateless_http": True,
+        "json_response": True,
+        "max_request_body_size": 1024 * 1024,
+        "transport_security": _transport_security(settings),
+    }
+
+    if settings.mcp_auth_mode == "api-key":
+        assert settings.mcp_api_key is not None
+        app = mcp.streamable_http_app(host=settings.mcp_host, **app_options)
+        protected_app = ApiKeyMiddleware(
+            app,
+            api_key=settings.mcp_api_key.get_secret_value(),
+            mcp_path=settings.mcp_path,
+        )
+        uvicorn.run(protected_app, host=settings.mcp_host, port=settings.mcp_port)
+        return
+
     mcp.run(
         transport="streamable-http",
         host=settings.mcp_host,
         port=settings.mcp_port,
-        streamable_http_path=settings.mcp_path,
-        stateless_http=True,
-        json_response=True,
-        max_request_body_size=1024 * 1024,
-        transport_security=_local_transport_security(),
+        **app_options,
     )
 
 

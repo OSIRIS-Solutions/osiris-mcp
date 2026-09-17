@@ -65,3 +65,45 @@ def test_api_key_and_secret_file_are_mutually_exclusive(tmp_path: Path) -> None:
             api_key_file=secret_file,
             _env_file=None,
         )
+
+
+def test_inbound_api_key_mode_requires_http_and_a_strong_key() -> None:
+    with pytest.raises(ValidationError, match="requires streamable-http"):
+        Settings(
+            mcp_auth_mode="api-key",
+            mcp_api_key="x" * 32,
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError, match="at least 32 characters"):
+        Settings(
+            mcp_transport="streamable-http",
+            mcp_auth_mode="api-key",
+            mcp_api_key="too-short",
+            _env_file=None,
+        )
+
+
+def test_oauth_mode_requires_complete_resource_server_configuration() -> None:
+    with pytest.raises(ValidationError, match="OSIRIS_MCP_PUBLIC_URL"):
+        Settings(
+            mcp_transport="streamable-http",
+            mcp_auth_mode="oauth",
+            _env_file=None,
+        )
+
+
+def test_oauth_scopes_accept_spaces_and_commas() -> None:
+    settings = Settings(
+        mcp_transport="streamable-http",
+        mcp_auth_mode="oauth",
+        mcp_public_url="https://mcp.example.org/mcp",
+        mcp_oauth_issuer_url="https://login.example.org",
+        mcp_oauth_introspection_url="https://login.example.org/introspect",
+        mcp_oauth_client_id="osiris-mcp",
+        mcp_oauth_client_secret="secret",
+        mcp_oauth_required_scopes="osiris:read, profile osiris:read",
+        _env_file=None,
+    )
+
+    assert settings.mcp_oauth_required_scope_list == ["osiris:read", "profile"]

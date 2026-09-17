@@ -61,6 +61,7 @@ async def test_server_info_reports_configuration_without_exposing_secrets() -> N
     assert "source_code" in result.structured_content
     assert result.structured_content["mode"] == "read-only development"
     assert result.structured_content["transport"] in {"stdio", "streamable-http"}
+    assert result.structured_content["authentication"] in {"none", "api-key", "oauth"}
     assert isinstance(result.structured_content["osiris_configured"], bool)
     assert "api_key" not in result.structured_content
 
@@ -193,3 +194,53 @@ def test_run_uses_hardened_local_http_settings(
     security = kwargs["transport_security"]
     assert isinstance(security, server_module.TransportSecuritySettings)
     assert "localhost:*" in security.allowed_hosts
+
+
+def test_run_wraps_http_app_in_api_key_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel_app = object()
+    app_calls: list[dict[str, object]] = []
+    uvicorn_calls: list[tuple[object, dict[str, object]]] = []
+
+    def fake_app(**kwargs: object) -> object:
+        app_calls.append(kwargs)
+        return sentinel_app
+
+    def fake_uvicorn_run(app: object, **kwargs: object) -> None:
+        uvicorn_calls.append((app, kwargs))
+
+    monkeypatch.setattr(server_module.mcp, "streamable_http_app", fake_app)
+    monkeypatch.setattr(server_module.uvicorn, "run", fake_uvicorn_run)
+    settings = Settings(
+        mcp_transport="streamable-http",
+        mcp_auth_mode="api-key",
+        mcp_api_key="s" * 32,
+        _env_file=None,
+    )
+
+    server_module.run(settings)
+
+    assert len(app_calls) == 1
+    assert len(uvicorn_calls) == 1
+    protected_app, uvicorn_options = uvicorn_calls[0]
+    assert isinstance(protected_app, server_module.ApiKeyMiddleware)
+    assert uvicorn_options == {"host": "127.0.0.1", "port": 8000}
+
+
+def test_transport_security_includes_public_oauth_host() -> None:
+    settings = Settings(
+        mcp_transport="streamable-http",
+        mcp_auth_mode="oauth",
+        mcp_public_url="https://mcp.example.org/mcp",
+        mcp_oauth_issuer_url="https://login.example.org",
+        mcp_oauth_introspection_url="https://login.example.org/introspect",
+        mcp_oauth_client_id="osiris-mcp",
+        mcp_oauth_client_secret="secret",
+        _env_file=None,
+    )
+
+    security = server_module._transport_security(settings)
+
+    assert "mcp.example.org:*" in security.allowed_hosts
+    assert "https://mcp.example.org:*" in security.allowed_origins
