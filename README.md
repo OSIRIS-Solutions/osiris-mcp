@@ -1,3 +1,5 @@
+> ⚠ This MCP connector requires an OSIRIS version that is currently not published. Please look at the [osiris-mcp](https://github.com/OSIRIS-Solutions/osiris/tree/osiris-mcp) branch if you want to try it.
+
 # OSIRIS MCP
 
 OSIRIS MCP is a read-only Model Context Protocol server for controlled access to
