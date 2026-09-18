@@ -13,3 +13,4 @@ build/
 compose.override.yaml
 secrets/
 report/
+slides/

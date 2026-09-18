@@ -239,7 +239,7 @@ async def search_activities(
     query: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
-    date_field: Literal["start", "end"] = "start",
+    date_field: Literal["start", "end", "active"] = "start",
     type: str | None = None,
     subtype: str | None = None,
     person: str | None = None,
@@ -253,8 +253,10 @@ async def search_activities(
     """Search activities and return compact, citation-centered evidence.
 
     Dates use YYYY-MM-DD and inclusively constrain the field selected by
-    ``date_field``. Use ``start`` for activities that began in a period and
-    ``end`` for activities completed in a period, such as completed theses.
+    ``date_field``. Use ``start`` for activities that began in a period,
+    ``end`` for activities completed in a period such as completed theses, and
+    ``active`` for activities whose duration overlaps the period. ``active``
+    requires both date bounds; use the same date twice for a single-day check.
     By default, results include only affiliated activities and exclude records
     marked Online ahead of print. Set the corresponding include flag to true
     only when the user explicitly requests those exceptional records. Type,

@@ -179,7 +179,7 @@ class OsirisClient:
         query: str | None = None,
         from_date: str | None = None,
         to_date: str | None = None,
-        date_field: Literal["start", "end"] = "start",
+        date_field: Literal["start", "end", "active"] = "start",
         type: str | None = None,
         subtype: str | None = None,
         person: str | None = None,
@@ -217,8 +217,12 @@ class OsirisClient:
             and parsed_dates["from_date"] > parsed_dates["to_date"]
         ):
             raise ValueError("from_date must not be after to_date")
-        if date_field not in {"start", "end"}:
-            raise ValueError("date_field must be start or end")
+        if date_field not in {"start", "end", "active"}:
+            raise ValueError("date_field must be start, end, or active")
+        if date_field == "active" and set(parsed_dates) != {"from_date", "to_date"}:
+            raise ValueError(
+                "date_field=active requires both from_date and to_date"
+            )
         if date_field != "start":
             params.append(("date_field", date_field))
 

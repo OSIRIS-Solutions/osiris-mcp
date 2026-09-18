@@ -248,9 +248,12 @@ The available read-only tools are:
 Activity date filters use `date_field=start` by default; for example,
 `from_date=2026-09-01` and `to_date=2026-09-30` select activities starting in
 September 2026. Set `date_field=end` to select activities completed in that
-period, such as completed theses. Activity searches include only affiliated
-records and exclude Online-ahead-of-print records by default. Exceptional
-searches can opt in with `include_unaffiliated=true` or
+period, such as completed theses. Set `date_field=active` to select activities
+whose duration overlaps the complete period; both bounds are required, and an
+open-ended activity with no end date is treated as ongoing. To check one day,
+use the same value for `from_date` and `to_date`. Activity searches include only
+affiliated records and exclude Online-ahead-of-print records by default.
+Exceptional searches can opt in with `include_unaffiliated=true` or
 `include_online_ahead_of_print=true`. Project searches can be narrowed by a
 free-text query, an `active_on` date in `YYYY-MM-DD` format, exact status, topic,
 organizational unit, and result limit.

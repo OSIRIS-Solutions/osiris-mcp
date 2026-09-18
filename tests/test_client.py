@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import httpx
+import pytest
 
 from osiris_mcp.client import OsirisApiError, OsirisClient
 from osiris_mcp.config import Settings
@@ -512,6 +513,50 @@ async def test_activity_search_omits_default_start_date_field() -> None:
 
     assert captured_request is not None
     assert "date_field" not in captured_request.url.params
+
+
+async def test_activity_search_sends_active_date_field() -> None:
+    captured_request: httpx.Request | None = None
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_request
+        captured_request = request
+        return httpx.Response(
+            200,
+            json={"status": 200, "count": 0, "total": 0, "data": []},
+        )
+
+    settings = Settings(base_url="https://osiris.example.org")
+    async with OsirisClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        await client.search_activities(
+            from_date="2026-07-01",
+            to_date="2026-09-30",
+            date_field="active",
+        )
+
+    assert captured_request is not None
+    assert captured_request.url.params["from_date"] == "2026-07-01"
+    assert captured_request.url.params["to_date"] == "2026-09-30"
+    assert captured_request.url.params["date_field"] == "active"
+
+
+async def test_activity_search_active_requires_complete_period() -> None:
+    settings = Settings(base_url="https://osiris.example.org")
+    async with OsirisClient(
+        settings,
+        transport=httpx.MockTransport(lambda _: httpx.Response(200)),
+    ) as client:
+        with pytest.raises(
+            ValueError,
+            match="date_field=active requires both from_date and to_date",
+        ):
+            await client.search_activities(
+                from_date="2026-07-01",
+                date_field="active",
+            )
 
 
 async def test_activity_search_exposes_complete_pagination_metadata() -> None:
