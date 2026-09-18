@@ -12,6 +12,29 @@ The current implementation is an initial development scaffold. Before exposing
 it publicly, review the deployment end to end, including TLS, network access,
 logging, rate limits, and the scopes granted to its dedicated API client.
 
+## Installation
+
+Python 3.12 is required. Run the published package without installing it
+globally:
+
+```bash
+uvx --from osiris-mcp osiris-mcp
+```
+
+Alternatively, install the command into an isolated environment:
+
+```bash
+pipx install osiris-mcp
+osiris-mcp
+```
+
+The server uses the stdio transport by default and reads its configuration from
+environment variables or a `.env` file in the current directory. At minimum,
+set `OSIRIS_BASE_URL` and `OSIRIS_API_KEY`; dedicated OSIRIS API clients should
+also set `OSIRIS_CLIENT_ID`. See [Configuration](#configuration) for the full
+setup and the distinction between downstream OSIRIS credentials and inbound MCP
+authentication.
+
 ## Development setup
 
 ```bash

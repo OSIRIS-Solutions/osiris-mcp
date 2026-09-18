@@ -12,3 +12,4 @@ build/
 *.egg-info/
 compose.override.yaml
 secrets/
+report/

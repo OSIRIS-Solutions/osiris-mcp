@@ -1,6 +1,6 @@
 [project]
 name = "osiris-mcp"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A secure, read-only MCP interface for OSIRIS research information systems."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -8,6 +8,25 @@ license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [
     { name = "OSIRIS Solutions GmbH" },
+]
+maintainers = [
+    { name = "Julia Koblitz" },
+]
+keywords = [
+    "MCP",
+    "Model Context Protocol",
+    "OSIRIS",
+    "research information system",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
     "httpx>=0.28,<1",
@@ -17,6 +36,12 @@ dependencies = [
 
 [project.scripts]
 osiris-mcp = "osiris_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/OSIRIS-Solutions/osiris-mcp"
+Repository = "https://github.com/OSIRIS-Solutions/osiris-mcp.git"
+Issues = "https://github.com/OSIRIS-Solutions/osiris-mcp/issues"
+Changelog = "https://github.com/OSIRIS-Solutions/osiris-mcp/releases"
 
 [dependency-groups]
 dev = [
@@ -34,3 +59,15 @@ testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/osiris_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/.env.example",
+    "/CONTRIBUTING.md",
+    "/RELEASING.md",
+    "/src",
+    "/tests",
+]
+
+[tool.hatch.version]
+path = "src/osiris_mcp/__init__.py"
